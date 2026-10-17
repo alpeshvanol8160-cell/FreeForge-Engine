@@ -1,11 +1,12 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#151a23">
-  <meta name="description" content="FreeForge Engine - a free browser-based 3D scene editor.">
-  <title>FreeForge Engine — 3D Editor</title>
+  <meta name="description" content="FreeForge Engine - Free browser-based 3D editor with terrain, snow worlds, forests and wildlife.">
+  <title>FreeForge Engine — 3D World Editor</title>
 
   <link rel="stylesheet" href="./style.css">
 
@@ -32,11 +33,35 @@
   </header>
 
   <nav class="toolbar">
-    <span class="toolbar-label">ADD OBJECT</span>
+    <span class="toolbar-label">BASIC OBJECTS</span>
     <button class="tool" data-add="box">＋ Cube</button>
     <button class="tool" data-add="sphere">＋ Sphere</button>
     <button class="tool" data-add="cylinder">＋ Cylinder</button>
     <button class="tool" data-add="floor">＋ Floor</button>
+
+    <span class="toolbar-label">WORLD BUILDER</span>
+    <button class="tool" data-add="terrain">＋ Terrain</button>
+    <button class="tool" data-add="mountains">＋ Mountains</button>
+    <button class="tool" data-add="tree">＋ Tree</button>
+    <button class="tool" data-add="water">＋ Water</button>
+
+    <span class="toolbar-label">WINTER WORLD</span>
+    <button class="tool" data-add="snow">❄ Snow Ground</button>
+    <button class="tool" data-add="snowmountains">❄ Snow Mountains</button>
+    <button class="tool" data-add="snowtree">❄ Snow Tree</button>
+    <button class="tool" data-add="ice">＋ Frozen Lake</button>
+    <button class="tool" data-add="snowfall">＋ Snowfall</button>
+
+    <span class="toolbar-label">FOREST ANIMALS</span>
+    <button class="tool" data-add="wolf">＋ Wolf</button>
+    <button class="tool" data-add="deer">＋ Deer</button>
+    <button class="tool" data-add="bear">＋ Bear</button>
+    <button class="tool" data-add="fox">＋ Fox</button>
+    <button class="tool" data-add="rabbit">＋ Rabbit</button>
+    <button class="tool" data-add="moose">＋ Moose</button>
+    <button class="tool" data-add="owl">＋ Owl</button>
+    <button class="tool" data-add="eagle">＋ Eagle</button>
+
     <button id="deleteBtn" class="tool danger">Delete selected</button>
     <span class="hint">Drag to orbit · Pinch to zoom</span>
   </nav>
@@ -53,7 +78,7 @@
 
     <section class="viewport-wrap">
       <div class="viewport-header">
-        <span>Perspective View</span>
+        <span>3D World View</span>
         <span id="sceneStatus">Loading...</span>
       </div>
 
@@ -61,7 +86,7 @@
 
       <div class="viewport-overlay">
         <span class="overlay-chip">3D VIEWPORT</span>
-        <span class="overlay-chip">WebGL</span>
+        <span class="overlay-chip">WEBGL</span>
       </div>
 
       <div id="playOverlay" class="play-overlay hidden">
@@ -73,8 +98,8 @@
       </div>
 
       <div class="viewport-footer">
-        <span>FreeForge • Prototype 0.1</span>
-        <span>Browser-based editor</span>
+        <span>FreeForge • World Editor</span>
+        <span>Browser-based 3D editor</span>
       </div>
     </section>
 
@@ -145,4 +170,3 @@
   <script type="module" src="./script.js"></script>
 </body>
 </html>
-
