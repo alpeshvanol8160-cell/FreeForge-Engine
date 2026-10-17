@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#151a23">
+  <title>FreeForge Engine — Browser 3D Editor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">F</span>
+      <span>FreeForge <small>ENGINE</small></span>
+    </div>
+    <div class="top-actions">
+      <button id="saveBtn" class="btn">Save</button>
+      <button id="loadBtn" class="btn">Load</button>
+      <button id="playBtn" class="btn primary">▶ Play</button>
+      <button id="stopBtn" class="btn" disabled>■ Stop</button>
+    </div>
+  </header>
+
+  <nav class="toolbar">
+    <span class="toolbar-label">ADD OBJECT</span>
+    <button class="tool" data-add="box">＋ Cube</button>
+    <button class="tool" data-add="sphere">＋ Sphere</button>
+    <button class="tool" data-add="cylinder">＋ Cylinder</button>
+    <button class="tool" data-add="floor">＋ Floor</button>
+    <button id="deleteBtn" class="tool danger">Delete selected</button>
+    <span class="hint">Drag to orbit · Pinch to zoom</span>
+  </nav>
+
+  <main class="workspace">
+    <aside class="panel hierarchy-panel">
+      <div class="panel-title">
+        WORLD OUTLINER <span id="objectCount">0</span>
+      </div>
+      <div class="scene-root">▾ 🌐 Scene</div>
+      <div id="hierarchy" class="hierarchy-list"></div>
+      <div class="panel-foot">Select an object to edit it.</div>
+    </aside>
+
+    <section class="viewport-wrap">
+      <div class="viewport-header">
+        <span>Perspective View</span>
+        <span id="sceneStatus">Ready</span>
+      </div>
+
+      <div id="viewport" aria-label="3D scene viewport"></div>
+
+      <div class="viewport-overlay">
+        <span class="overlay-chip">3D VIEWPORT</span>
+        <span class="overlay-chip">WebGL</span>
+      </div>
+
+      <div id="playOverlay" class="play-overlay hidden">
+        <div class="play-card">
+          <strong>Play Mode</strong>
+          <p>Prototype preview is running.</p>
+          <button id="overlayStopBtn" class="btn primary">
+            Stop preview
+          </button>
+        </div>
+      </div>
+
+      <div class="viewport-footer">
+        <span>FreeForge • Prototype 0.1</span>
+        <span>Browser-based editor</span>
+      </div>
+    </section>
+
+    <aside class="panel inspector-panel">
+      <div class="panel-title">DETAILS / INSPECTOR</div>
+
+      <div id="inspectorEmpty" class="empty-state">
+        Select an object in the scene or hierarchy to edit its properties.
+      </div>
+
+      <form id="inspector" class="inspector hidden">
+        <label>
+          Object Name
+          <input id="objectName" type="text" maxlength="40">
+        </label>
+
+        <label>
+          Object Type
+          <input id="objectType" type="text" disabled>
+        </label>
+
+        <div class="property-group">
+          <h3>Location</h3>
+          <div class="triple">
+            <label>X<input id="posX" type="number" step="0.1"></label>
+            <label>Y<input id="posY" type="number" step="0.1"></label>
+            <label>Z<input id="posZ" type="number" step="0.1"></label>
+          </div>
+        </div>
+
+        <div class="property-group">
+          <h3>Rotation (degrees)</h3>
+          <div class="triple">
+            <label>X<input id="rotX" type="number" step="5"></label>
+            <label>Y<input id="rotY" type="number" step="5"></label>
+            <label>Z<input id="rotZ" type="number" step="5"></label>
+          </div>
+        </div>
+
+        <div class="property-group">
+          <h3>Scale</h3>
+          <div class="triple">
+            <label>X<input id="scaleX" type="number" min="0.1" step="0.1"></label>
+            <label>Y<input id="scaleY" type="number" min="0.1" step="0.1"></label>
+            <label>Z<input id="scaleZ" type="number" min="0.1" step="0.1"></label>
+          </div>
+        </div>
+
+        <label>
+          Material Color
+          <input id="objectColor" type="color" value="#43a5ff">
+        </label>
+
+        <button type="button" id="duplicateBtn" class="btn full">
+          Duplicate object
+        </button>
+      </form>
+    </aside>
+  </main>
+
+  <footer class="statusbar">
+    <span><i class="status-dot"></i> All systems ready</span>
+    <span id="statusMessage">Tip: Add a cube to begin.</span>
+  </footer>
+
+  <input type="file" id="fileInput"
+         accept=".json,application/json" hidden>
+
+  <script type="module" src="script.js"></script>
+</body>
+</html>
