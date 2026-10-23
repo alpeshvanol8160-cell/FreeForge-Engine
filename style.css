@@ -532,3 +532,23 @@ input[type="color"] {
     flex-direction: column;
   }
 }
+
+.transform-tool.active {
+  background: #1678d2;
+  border-color: #43a5ff;
+  color: #ffffff;
+}
+
+.transform-tool {
+  touch-action: manipulation;
+  min-width: 76px;
+}
+
+@media (max-width: 560px) {
+  .transform-tool {
+    min-height: 42px;
+    flex: 1;
+    font-size: 12px;
+  }
+}
+
