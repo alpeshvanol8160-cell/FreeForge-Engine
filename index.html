@@ -17,17 +17,15 @@
   }
   </script>
 </head>
-
 <body>
   <header class="topbar">
     <div class="brand">
       <span class="brand-icon">⚒️</span>
       <div>
         <strong>FreeForge Engine</strong>
-        <small>3D Game Editor</small>
+        <small>3D GAME EDITOR</small>
       </div>
     </div>
-
     <div class="top-actions">
       <button id="saveBtn" class="tool">💾 Save</button>
       <button id="loadBtn" class="tool">📂 Load</button>
@@ -45,14 +43,12 @@
       <button class="tool" data-add="Cylinder">＋ Cylinder</button>
       <button class="tool" data-add="Floor">＋ Floor</button>
     </div>
-
     <div class="tool-group">
       <span class="toolbar-label">TRANSFORM</span>
       <button class="tool transform-tool active" data-transform="translate">↔ Move</button>
       <button class="tool transform-tool" data-transform="rotate">⟳ Rotate</button>
       <button class="tool transform-tool" data-transform="scale">⤢ Scale</button>
     </div>
-
     <div class="tool-group">
       <span class="toolbar-label">WORLD</span>
       <button class="tool" data-add="Terrain">🌱 Terrain</button>
@@ -60,7 +56,6 @@
       <button class="tool" data-add="Tree">🌲 Tree</button>
       <button class="tool" data-add="Water">🌊 Water</button>
     </div>
-
     <div class="tool-group">
       <span class="toolbar-label">SNOW WORLD</span>
       <button class="tool" data-add="Snow Ground">❄️ Snow Ground</button>
@@ -69,7 +64,6 @@
       <button class="tool" data-add="Frozen Lake">🧊 Frozen Lake</button>
       <button class="tool" data-add="Snowfall">🌨️ Snowfall</button>
     </div>
-
     <div class="tool-group">
       <span class="toolbar-label">ANIMALS</span>
       <button class="tool" data-add="Wolf">🐺 Wolf</button>
@@ -81,7 +75,6 @@
       <button class="tool" data-add="Owl">🦉 Owl</button>
       <button class="tool" data-add="Eagle">🦅 Eagle</button>
     </div>
-
     <div class="tool-group">
       <button id="deleteBtn" class="tool danger">🗑 Delete Selected</button>
     </div>
@@ -99,9 +92,8 @@
     <section class="viewport-panel">
       <div class="viewport-heading">
         <span>3D VIEWPORT</span>
-        <span id="statusText">Ready</span>
+        <span id="statusText">Loading...</span>
       </div>
-
       <div id="viewport">
         <div id="playOverlay" class="play-overlay" hidden>
           <div class="play-card">
@@ -111,7 +103,6 @@
           </div>
         </div>
       </div>
-
       <div class="viewport-footer">
         <span>🖱️ Drag to orbit · Scroll to zoom</span>
         <span>Move / Rotate / Scale</span>
@@ -122,12 +113,10 @@
       <div class="panel-heading">
         <strong>Inspector</strong>
       </div>
-
       <div id="emptyInspector" class="empty-inspector">
         <div class="empty-icon">◈</div>
         <p>Select an object to edit its properties.</p>
       </div>
-
       <div id="inspectorContent" hidden>
         <label for="objectName">Object Name</label>
         <input id="objectName" type="text" autocomplete="off">
@@ -143,7 +132,6 @@
             <label>Z<input id="posZ" type="number" step="0.1"></label>
           </div>
         </div>
-
         <div class="property-section">
           <h4>Rotation (degrees)</h4>
           <div class="vector-inputs">
@@ -152,7 +140,6 @@
             <label>Z<input id="rotZ" type="number" step="5"></label>
           </div>
         </div>
-
         <div class="property-section">
           <h4>Scale</h4>
           <div class="vector-inputs">
@@ -161,10 +148,8 @@
             <label>Z<input id="scaleZ" type="number" min="0.01" step="0.1"></label>
           </div>
         </div>
-
         <label for="objectColor">Object Color</label>
         <input id="objectColor" type="color" value="#69a7ff">
-
         <button id="duplicateBtn" class="tool full-width">▣ Duplicate Object</button>
       </div>
     </aside>
