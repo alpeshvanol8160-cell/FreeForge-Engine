@@ -1,211 +1,282 @@
  
 import * as THREE from "three";
-import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { TransformControls } from "three/addons/controls/TransformControls.js";
 
-const $ = id => document.getElementById(id);
-const viewport = $("viewport");
+/* ========================================
+   FREEFORGE ENGINE
+   3D EDITOR + WORLD BUILDER
+======================================== */
 
-if (!viewport) {
-  document.body.innerHTML = "<h2>FreeForge: index.html mein #viewport nahi mila.</h2>";
-  throw new Error("Missing #viewport element");
-}
+const viewport = document.getElementById("viewport");
+const statusText = document.getElementById("statusText");
+const hierarchyList = document.getElementById("hierarchyList");
+const objectCount = document.getElementById("objectCount");
+const emptyInspector = document.getElementById("emptyInspector");
+const inspectorContent = document.getElementById("inspectorContent");
+const playOverlay = document.getElementById("playOverlay");
+const fileInput = document.getElementById("fileInput");
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#b8d6e8");
-scene.fog = new THREE.Fog("#b8d6e8", 45, 150);
+scene.background = new THREE.Color("#171d2a");
+scene.fog = new THREE.Fog("#171d2a", 35, 100);
 
-const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 1000);
-camera.position.set(14, 12, 18);
+const camera = new THREE.PerspectiveCamera(
+  60,
+  viewport.clientWidth / Math.max(viewport.clientHeight, 1),
+  0.1,
+  1000
+);
+camera.position.set(10, 9, 13);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  alpha: false
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(viewport.clientWidth, viewport.clientHeight);
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-viewport.appendChild(renderer.domElement);
+viewport.prepend(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.target.set(0, 1, 0);
 controls.maxPolarAngle = Math.PI * 0.49;
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x718096, 2.2));
+const transformControls = new TransformControls(camera, renderer.domElement);
+transformControls.setMode("translate");
+transformControls.setSize(0.8);
+scene.add(transformControls);
 
-const sun = new THREE.DirectionalLight(0xffffff, 2.5);
-sun.position.set(12, 25, 10);
+const ambientLight = new THREE.HemisphereLight("#dceaff", "#4b5362", 2);
+scene.add(ambientLight);
+
+const sun = new THREE.DirectionalLight("#ffffff", 3);
+sun.position.set(10, 18, 8);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 scene.add(sun);
 
-const grid = new THREE.GridHelper(100, 100, 0x52708f, 0x8a9cab);
+const grid = new THREE.GridHelper(100, 100, "#53647d", "#303b50");
 scene.add(grid);
-const axes = new THREE.AxesHelper(2);
+
+const axes = new THREE.AxesHelper(3);
 scene.add(axes);
 
 const objects = [];
 const animatedObjects = [];
 let selected = null;
 let playing = false;
-let savedCamera = null;
-let nextId = 1;
-
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
+let savedCameraPosition = null;
+let savedTarget = null;
+let snowParticles = null;
+let snowTime = 0;
+let objectId = 1;
 
 function status(message) {
-  const el = $("statusMessage");
-  if (el) el.textContent = message;
+  if (statusText) statusText.textContent = message;
 }
 
-function resize() {
-  const w = viewport.clientWidth;
-  const h = viewport.clientHeight;
-  if (!w || !h) return;
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  renderer.setSize(w, h);
+function makeMaterial(color, extra = {}) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.8,
+    metalness: 0.05,
+    ...extra
+  });
 }
 
-window.addEventListener("resize", resize);
-if ("ResizeObserver" in window) {
-  new ResizeObserver(resize).observe(viewport);
+function registerObject(obj, type, name) {
+  obj.userData.editorObject = true;
+  obj.userData.objectType = type;
+  obj.userData.objectName = name || `${type} ${objectId++}`;
+
+  scene.add(obj);
+  objects.push(obj);
+
+  selectObject(obj);
+  renderHierarchy();
+  status(`${obj.userData.objectName} added`);
+  return obj;
 }
 
-function material(color, roughness = 0.85) {
-  return new THREE.MeshStandardMaterial({ color, roughness });
+function makeMesh(geometry, color, name, position = [0, 0.5, 0]) {
+  const mesh = new THREE.Mesh(geometry, makeMaterial(color));
+  mesh.position.set(...position);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.name = name;
+  return mesh;
 }
 
-function mesh(geometry, color, x = 0, y = 0, z = 0) {
-  const m = new THREE.Mesh(geometry, material(color));
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  return m;
+function addCube() {
+  return registerObject(
+    makeMesh(new THREE.BoxGeometry(1, 1, 1), "#69a7ff", "Cube"),
+    "Cube",
+    "Cube"
+  );
 }
 
-function group() {
-  return new THREE.Group();
+function addSphere() {
+  return registerObject(
+    makeMesh(new THREE.SphereGeometry(0.65, 32, 24), "#69d6a6", "Sphere"),
+    "Sphere",
+    "Sphere"
+  );
 }
 
-function cone(radius, height, color, x, y, z, sides = 8) {
-  return mesh(new THREE.ConeGeometry(radius, height, sides), color, x, y, z);
+function addCylinder() {
+  return registerObject(
+    makeMesh(new THREE.CylinderGeometry(0.5, 0.5, 1.2, 32), "#f4b860", "Cylinder"),
+    "Cylinder",
+    "Cylinder"
+  );
 }
 
-/* Green or hilly snow terrain */
-function makeTerrain(snow = false) {
+function addFloor() {
+  const floor = makeMesh(
+    new THREE.BoxGeometry(10, 0.2, 10),
+    "#697386",
+    "Floor",
+    [0, -0.1, 0]
+  );
+  return registerObject(floor, "Floor", "Floor");
+}
+
+function addTerrain() {
   const geometry = new THREE.PlaneGeometry(24, 24, 48, 48);
   geometry.rotateX(-Math.PI / 2);
 
-  const p = geometry.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i);
-    const z = p.getZ(i);
-    const hills =
-      Math.sin(x * 0.55) * 0.65 +
-      Math.cos(z * 0.5) * 0.5 +
-      Math.sin((x + z) * 0.3) * 0.6;
-    p.setY(i, Math.max(0, hills) * (snow ? 1.2 : 0.9));
+  const positions = geometry.attributes.position;
+  for (let i = 0; i < positions.count; i++) {
+    const x = positions.getX(i);
+    const z = positions.getZ(i);
+    const y =
+      Math.sin(x * 0.4) * 0.25 +
+      Math.cos(z * 0.35) * 0.2 +
+      Math.sin((x + z) * 0.2) * 0.15;
+    positions.setY(i, y);
   }
-
   geometry.computeVertexNormals();
 
   const terrain = new THREE.Mesh(
     geometry,
     new THREE.MeshStandardMaterial({
-      color: snow ? "#eaf4ff" : "#4c8b45",
+      color: "#4b8650",
       roughness: 1,
       side: THREE.DoubleSide
     })
   );
-
+  terrain.position.y = -0.1;
   terrain.receiveShadow = true;
-  terrain.castShadow = true;
-  return terrain;
+
+  return registerObject(terrain, "Terrain", "Terrain");
 }
 
-/* FIX: large, flat, clearly visible white snow ground */
-function makeSnowGround() {
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(50, 50),
-    new THREE.MeshStandardMaterial({
-      color: "#ffffff",
-      roughness: 1,
-      metalness: 0,
-      side: THREE.DoubleSide
-    })
-  );
+function addMountains(snowy = false) {
+  const group = new THREE.Group();
+  const count = 7;
 
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.05;
-  ground.receiveShadow = true;
-  ground.castShadow = false;
-  return ground;
-}
+  for (let i = 0; i < count; i++) {
+    const height = 2.5 + Math.random() * 4;
+    const radius = 1.5 + Math.random() * 1.8;
+    const mountain = makeMesh(
+      new THREE.ConeGeometry(radius, height, 7),
+      snowy ? "#71869d" : "#5a6c55",
+      "Mountain",
+      [
+        (i - (count - 1) / 2) * 2.8,
+        height / 2 - 0.15,
+        -5 - Math.random() * 3
+      ]
+    );
+    group.add(mountain);
 
-function makeMountain(snow = false) {
-  const root = group();
-  const rock = snow ? "#708294" : "#777568";
-
-  root.add(mesh(new THREE.ConeGeometry(3, 6, 7), rock, 0, 3, 0));
-  root.add(mesh(new THREE.ConeGeometry(2.3, 4.5, 7), rock, 2.1, 2.25, -1));
-  root.add(mesh(new THREE.ConeGeometry(2.4, 4.8, 7), rock, -2.1, 2.4, 0.7));
-
-  if (snow) {
-    root.add(cone(1.5, 2.2, "#ffffff", 0, 4.8, 0, 7));
-    root.add(cone(1.15, 1.7, "#f5f9ff", 2.1, 3.5, -1, 7));
-    root.add(cone(1.2, 1.8, "#ffffff", -2.1, 3.7, 0.7, 7));
-  }
-  return root;
-}
-
-function makeTree(snow = false) {
-  const root = group();
-
-  root.add(mesh(
-    new THREE.CylinderGeometry(0.16, 0.24, 1.8, 7),
-    "#725039", 0, 0.9, 0
-  ));
-
-  for (let i = 0; i < 3; i++) {
-    const h = 2 - i * 0.25;
-    root.add(cone(
-      1.15 - i * 0.19,
-      h,
-      "#245c38",
-      0,
-      1.7 + i * 0.8,
-      0
-    ));
-
-    if (snow) {
-      root.add(cone(
-        0.93 - i * 0.17,
-        h * 0.72,
-        "#f5f8ff",
-        0,
-        1.88 + i * 0.8,
-        0
-      ));
+    if (snowy) {
+      const cap = makeMesh(
+        new THREE.ConeGeometry(radius * 0.47, height * 0.42, 7),
+        "#f1f7ff",
+        "Snow Cap",
+        [0, height * 0.31, 0]
+      );
+      mountain.add(cap);
+      cap.position.y = height * 0.31;
     }
   }
 
-  return root;
+  return registerObject(
+    group,
+    snowy ? "Snow Mountains" : "Mountains",
+    snowy ? "Snow Mountains" : "Mountains"
+  );
 }
 
-function makeWater(ice = false) {
-  const water = mesh(
-    new THREE.BoxGeometry(12, 0.08, 9),
-    ice ? "#c9efff" : "#168fd0",
-    0, 0.02, 0
+function addTree(snowy = false) {
+  const group = new THREE.Group();
+
+  const trunk = makeMesh(
+    new THREE.CylinderGeometry(0.15, 0.22, 1.3, 8),
+    "#795238",
+    "Trunk",
+    [0, 0.65, 0]
+  );
+  group.add(trunk);
+
+  for (let i = 0; i < 3; i++) {
+    const leaves = makeMesh(
+      new THREE.ConeGeometry(0.8 - i * 0.14, 1.25, 9),
+      snowy ? "#dbe7f2" : "#287447",
+      "Leaves",
+      [0, 1.35 + i * 0.55, 0]
+    );
+    group.add(leaves);
+  }
+
+  return registerObject(
+    group,
+    snowy ? "Snow Tree" : "Tree",
+    snowy ? "Snow Tree" : "Tree"
+  );
+}
+
+function addWater(frozen = false) {
+  const water = makeMesh(
+    new THREE.BoxGeometry(12, 0.12, 8),
+    frozen ? "#a9dff5" : "#208ed1",
+    frozen ? "Frozen Lake" : "Water",
+    [0, 0.02, 0]
   );
 
   water.material.transparent = true;
-  water.material.opacity = ice ? 0.96 : 0.8;
-  water.material.roughness = ice ? 0.22 : 0.12;
-  return water;
+  water.material.opacity = frozen ? 0.88 : 0.78;
+  water.material.roughness = frozen ? 0.2 : 0.3;
+  water.material.metalness = frozen ? 0.15 : 0.2;
+
+  return registerObject(water, frozen ? "Frozen Lake" : "Water",
+    frozen ? "Frozen Lake" : "Water");
 }
 
-function makeSnowfall() {
-  const count = 600;
+function addSnowGround() {
+  const ground = makeMesh(
+    new THREE.BoxGeometry(24, 0.2, 24),
+    "#e8f2ff",
+    "Snow Ground",
+    [0, -0.1, 0]
+  );
+  ground.material.roughness = 0.95;
+  return registerObject(ground, "Snow Ground", "Snow Ground");
+}
+
+function addSnowfall() {
+  if (snowParticles) {
+    scene.remove(snowParticles);
+    snowParticles.geometry.dispose();
+    snowParticles.material.dispose();
+  }
+
+  const count = 1200;
   const positions = new Float32Array(count * 3);
 
   for (let i = 0; i < count; i++) {
@@ -215,513 +286,425 @@ function makeSnowfall() {
   }
 
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.BufferAttribute(positions, 3)
-  );
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 
-  const points = new THREE.Points(
-    geometry,
-    new THREE.PointsMaterial({
-      color: "#ffffff",
-      size: 0.12,
-      transparent: true,
-      opacity: 0.95
-    })
-  );
+  const material = new THREE.PointsMaterial({
+    color: "#ffffff",
+    size: 0.09,
+    transparent: true,
+    opacity: 0.85
+  });
 
-  animatedObjects.push({ type: "snowfall", object: points });
-  return points;
+  snowParticles = new THREE.Points(geometry, material);
+  snowParticles.userData.objectType = "Snowfall";
+  snowParticles.userData.objectName = "Snowfall";
+  snowParticles.userData.editorObject = true;
+  scene.add(snowParticles);
+  objects.push(snowParticles);
+
+  selectObject(snowParticles);
+  renderHierarchy();
+  status("Snowfall added");
+  return snowParticles;
 }
 
-/* Simple procedural low-poly wildlife */
-function makeAnimal(type) {
-  const root = group();
-
-  const palette = {
-    wolf: ["#737b82", "#d6dce0"],
-    deer: ["#a76b38", "#f0d9ad"],
-    bear: ["#68452f", "#956744"],
-    fox: ["#d76b2e", "#fff0d9"],
-    rabbit: ["#c4c8ce", "#f5f5f5"],
-    moose: ["#684832", "#b18b5c"],
-    owl: ["#9a7651", "#e4d3b1"],
-    eagle: ["#65462d", "#c5a77c"]
+function addAnimal(type) {
+  const group = new THREE.Group();
+  const colorMap = {
+    Wolf: "#777d88",
+    Deer: "#a66b3f",
+    Bear: "#5b4030",
+    Fox: "#d46d2f",
+    Rabbit: "#d9d9d9",
+    Moose: "#79553b",
+    Owl: "#b6a17c",
+    Eagle: "#8a6546"
   };
+  const color = colorMap[type] || "#a0a0a0";
 
-  const [fur, lightFur] = palette[type] || ["#888888", "#dddddd"];
-  const add = obj => root.add(obj);
+  const body = makeMesh(
+    new THREE.SphereGeometry(0.65, 20, 16),
+    color,
+    `${type} Body`,
+    [0, 0.85, 0]
+  );
+  body.scale.set(1.25, 0.75, 0.7);
+  group.add(body);
 
-  if (type === "owl" || type === "eagle") {
-    add(mesh(new THREE.SphereGeometry(0.43, 10, 8), fur, 0, 1, 0));
-    add(mesh(new THREE.SphereGeometry(0.27, 10, 8), lightFur, 0, 0.8, 0.25));
-    add(cone(0.12, 0.3, "#d8a52c", 0, 0.85, 0.48, 5));
+  const head = makeMesh(
+    new THREE.SphereGeometry(0.34, 18, 14),
+    color,
+    `${type} Head`,
+    [0.62, 1.18, 0]
+  );
+  group.add(head);
 
+  if (type === "Owl" || type === "Eagle") {
+    const wingMaterial = makeMaterial(color);
     for (const side of [-1, 1]) {
-      add(mesh(new THREE.BoxGeometry(0.16, 0.65, 0.65),
-        fur, side * 0.42, 0.9, 0));
-
-      add(mesh(new THREE.SphereGeometry(0.075, 8, 6),
-        "#f6df83", side * 0.15, 1.13, 0.34));
-
-      add(mesh(new THREE.SphereGeometry(0.035, 6, 6),
-        "#171717", side * 0.15, 1.13, 0.4));
-    }
-
-    if (type === "eagle") {
-      add(mesh(new THREE.BoxGeometry(1.4, 0.08, 0.25),
-        fur, 0, 1.05, -0.1));
+      const wing = new THREE.Mesh(
+        new THREE.SphereGeometry(0.42, 12, 10),
+        wingMaterial
+      );
+      wing.position.set(0, 0.95, side * 0.58);
+      wing.scale.set(0.8, 0.18, 1.1);
+      wing.castShadow = true;
+      group.add(wing);
     }
   } else {
-    add(mesh(new THREE.SphereGeometry(0.55, 10, 8),
-      fur, 0, 0.72, 0));
-
-    add(mesh(new THREE.SphereGeometry(0.31, 10, 8),
-      fur, 0, 1.03, 0.48));
-
-    add(mesh(new THREE.SphereGeometry(0.2, 8, 7),
-      lightFur, 0, 0.98, 0.68));
-
-    if (type === "wolf" || type === "fox") {
-      add(cone(0.15, 0.48, fur, -0.17, 1.35, 0.45, 5));
-      add(cone(0.15, 0.48, fur, 0.17, 1.35, 0.45, 5));
-      add(mesh(new THREE.SphereGeometry(0.07, 8, 6),
-        "#171717", 0, 0.98, 0.85));
-    }
-
-    if (type === "deer" || type === "moose") {
-      for (const side of [-1, 1]) {
-        const antler = mesh(
-          new THREE.CylinderGeometry(0.035, 0.07, 0.7, 5),
-          "#d5c09b",
-          side * 0.17, 1.68, 0.37
+    for (const x of [-0.35, 0.38]) {
+      for (const z of [-0.32, 0.32]) {
+        const leg = makeMesh(
+          new THREE.CylinderGeometry(0.08, 0.09, 0.6, 8),
+          color,
+          `${type} Leg`,
+          [x, 0.3, z]
         );
-        antler.rotation.z = side * -0.45;
-        add(antler);
-
-        add(mesh(new THREE.CylinderGeometry(0.025, 0.04, 0.32, 5),
-          "#d5c09b", side * 0.35, 1.82, 0.37));
+        group.add(leg);
       }
     }
-
-    if (type === "bear") {
-      for (const side of [-1, 1]) {
-        add(mesh(new THREE.SphereGeometry(0.16, 8, 6),
-          fur, side * 0.26, 1.25, 0.35));
-      }
-    }
-
-    if (type === "rabbit") {
-      for (const side of [-1, 1]) {
-        const ear = mesh(new THREE.SphereGeometry(0.11, 8, 8),
-          fur, side * 0.13, 1.47, 0.4);
-        ear.scale.set(0.65, 2.5, 0.6);
-        add(ear);
-      }
-    }
-
-    for (const x of [-0.32, 0.32]) {
-      for (const z of [-0.28, 0.28]) {
-        add(mesh(new THREE.CylinderGeometry(0.085, 0.1, 0.48, 7),
-          fur, x, 0.27, z));
-      }
-    }
-
-    add(mesh(new THREE.SphereGeometry(0.1, 8, 6),
-      lightFur, 0, 0.72, -0.52));
   }
 
-  root.traverse(child => {
-    if (child.isMesh) {
-      child.castShadow = true;
-      child.receiveShadow = true;
-    }
-  });
+  if (type === "Deer" || type === "Moose") {
+    for (const side of [-1, 1]) {
+      const antler = makeMesh(
+        new THREE.CylinderGeometry(0.035, 0.06, 0.65, 6),
+        "#d7c6a1",
+        "Antler",
+        [0.58, 1.7, side * 0.18]
+      );
+      antler.rotation.z = -0.35;
+      group.add(antler);
 
+      const branch = makeMesh(
+        new THREE.CylinderGeometry(0.025, 0.04, 0.35, 6),
+        "#d7c6a1",
+        "Antler Branch",
+        [0.58, 1.9, side * 0.3]
+      );
+      branch.rotation.z = 0.6;
+      group.add(branch);
+    }
+  }
+
+  if (type === "Rabbit") {
+    for (const side of [-1, 1]) {
+      const ear = makeMesh(
+        new THREE.BoxGeometry(0.12, 0.5, 0.12),
+        color,
+        "Rabbit Ear",
+        [0.62, 1.62, side * 0.14]
+      );
+      group.add(ear);
+    }
+  }
+
+  group.position.set(
+    (Math.random() - 0.5) * 4,
+    0,
+    (Math.random() - 0.5) * 4
+  );
+
+  const animal = registerObject(group, type, type);
   animatedObjects.push({
-    type: "animal",
-    object: root,
-    baseY: 0,
+    object: animal,
+    baseY: animal.position.y,
     phase: Math.random() * Math.PI * 2
   });
-
-  return root;
+  return animal;
 }
 
-function makeObject(type) {
+function addObject(type) {
   switch (type) {
-    case "terrain": return makeTerrain(false);
-    case "mountains": return makeMountain(false);
-    case "tree": return makeTree(false);
-    case "water": return makeWater(false);
-    case "snow": return makeSnowGround();
-    case "snowmountains": return makeMountain(true);
-    case "snowtree": return makeTree(true);
-    case "ice": return makeWater(true);
-    case "snowfall": return makeSnowfall();
-
-    case "wolf":
-    case "deer":
-    case "bear":
-    case "fox":
-    case "rabbit":
-    case "moose":
-    case "owl":
-    case "eagle":
-      return makeAnimal(type);
-
-    case "sphere":
-      return mesh(new THREE.SphereGeometry(0.65, 24, 16), "#43a5ff");
-
-    case "cylinder":
-      return mesh(new THREE.CylinderGeometry(0.55, 0.55, 1.2, 24), "#43a5ff");
-
-    case "floor":
-      return mesh(new THREE.BoxGeometry(8, 0.15, 8), "#687d65");
-
+    case "Cube": return addCube();
+    case "Sphere": return addSphere();
+    case "Cylinder": return addCylinder();
+    case "Floor": return addFloor();
+    case "Terrain": return addTerrain();
+    case "Mountains": return addMountains(false);
+    case "Snow Mountains": return addMountains(true);
+    case "Tree": return addTree(false);
+    case "Snow Tree": return addTree(true);
+    case "Water": return addWater(false);
+    case "Frozen Lake": return addWater(true);
+    case "Snow Ground": return addSnowGround();
+    case "Snowfall": return addSnowfall();
+    case "Wolf":
+    case "Deer":
+    case "Bear":
+    case "Fox":
+    case "Rabbit":
+    case "Moose":
+    case "Owl":
+    case "Eagle":
+      return addAnimal(type);
     default:
-      return mesh(new THREE.BoxGeometry(1, 1, 1), "#43a5ff");
+      status(`Unknown object: ${type}`);
   }
 }
 
-const names = {
-  box: "Cube",
-  sphere: "Sphere",
-  cylinder: "Cylinder",
-  floor: "Floor",
-  terrain: "Green Terrain",
-  mountains: "Mountains",
-  tree: "Pine Tree",
-  water: "Water",
-  snow: "Snow Ground",
-  snowmountains: "Snow Mountains",
-  snowtree: "Snow Pine Tree",
-  ice: "Frozen Lake",
-  snowfall: "Snowfall",
-  wolf: "Wolf",
-  deer: "Deer",
-  bear: "Bear",
-  fox: "Fox",
-  rabbit: "Rabbit",
-  moose: "Moose",
-  owl: "Owl",
-  eagle: "Eagle"
-};
+/* ========================================
+   SELECT + HIERARCHY
+======================================== */
 
-function getColor(obj) {
+function selectObject(obj) {
+  selected = obj || null;
+
+  if (selected && !playing) {
+    transformControls.attach(selected);
+  } else {
+    transformControls.detach();
+  }
+
+  renderHierarchy();
+  updateInspector();
+}
+
+function renderHierarchy() {
+  hierarchyList.innerHTML = "";
+  objectCount.textContent = `${objects.length} object${objects.length === 1 ? "" : "s"}`;
+
+  for (const obj of objects) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "hierarchy-item";
+    if (obj === selected) row.classList.add("active");
+
+    const icon = document.createElement("span");
+    icon.textContent = getObjectIcon(obj.userData.objectType);
+
+    const label = document.createElement("span");
+    label.textContent = obj.userData.objectName || obj.userData.objectType || "Object";
+
+    row.append(icon, label);
+    row.addEventListener("click", () => selectObject(obj));
+    hierarchyList.appendChild(row);
+  }
+}
+
+function getObjectIcon(type) {
+  const icons = {
+    Cube: "◼", Sphere: "●", Cylinder: "▰", Floor: "▱",
+    Terrain: "🌱", Mountains: "⛰️", "Snow Mountains": "🏔️",
+    Tree: "🌲", "Snow Tree": "🌲", Water: "🌊",
+    "Snow Ground": "❄️", "Frozen Lake": "🧊", Snowfall: "🌨️",
+    Wolf: "🐺", Deer: "🦌", Bear: "🐻", Fox: "🦊",
+    Rabbit: "🐇", Moose: "🫎", Owl: "🦉", Eagle: "🦅"
+  };
+  return icons[type] || "◈";
+}
+
+/* ========================================
+   INSPECTOR
+======================================== */
+
+function updateInspector() {
+  if (!selected) {
+    emptyInspector.hidden = false;
+    inspectorContent.hidden = true;
+    return;
+  }
+
+  emptyInspector.hidden = true;
+  inspectorContent.hidden = false;
+
+  document.getElementById("objectName").value =
+    selected.userData.objectName || "Object";
+  document.getElementById("objectType").value =
+    selected.userData.objectType || "Object";
+
+  setVectorInputs("pos", selected.position, false);
+  setVectorInputs("rot", selected.rotation, true);
+  setVectorInputs("scale", selected.scale, false);
+
+  const color = getObjectColor(selected);
+  if (color) document.getElementById("objectColor").value = `#${color.getHexString()}`;
+}
+
+function setVectorInputs(prefix, vector, isRotation) {
+  const factor = isRotation ? 180 / Math.PI : 1;
+  for (const axis of ["X", "Y", "Z"]) {
+    const value = vector[axis.toLowerCase()] * factor;
+    document.getElementById(prefix + axis).value = Number(value.toFixed(3));
+  }
+}
+
+function getObjectColor(obj) {
   let found = null;
   obj.traverse(child => {
     if (!found && child.isMesh && child.material && child.material.color) {
       found = child.material.color;
     }
   });
-  return found || new THREE.Color("#43a5ff");
+  return found;
 }
 
-function setColor(obj, color) {
+function setObjectColor(obj, hex) {
   obj.traverse(child => {
-    if (child.isMesh && child.material?.color) {
-      child.material.color.set(color);
-    }
+    if (!child.isMesh || !child.material) return;
+    if (child.material.color) child.material.color.set(hex);
   });
 }
 
-function addObject(type = "box", data = {}) {
-  const obj = makeObject(type);
-  obj.userData.type = type;
-  obj.userData.editorId = nextId++;
-
-  obj.name = data.name || `${names[type] || "Object"} ${obj.userData.editorId}`;
-
-  obj.traverse(child => {
-    child.userData.editorRoot = obj;
-  });
-
-  obj.position.fromArray(data.position || [
-    (Math.random() - 0.5) * 4,
-    type === "floor" ? -0.08 : 0,
-    (Math.random() - 0.5) * 4
-  ]);
-
-  if (data.rotation) obj.rotation.fromArray(data.rotation);
-  if (data.scale) obj.scale.fromArray(data.scale);
-
-  scene.add(obj);
-  objects.push(obj);
-  selectObject(obj);
-  status(obj.name + " added");
-  return obj;
+function attachVectorInput(prefix, vector, isRotation = false) {
+  for (const axis of ["X", "Y", "Z"]) {
+    const input = document.getElementById(prefix + axis);
+    input.addEventListener("change", () => {
+      if (!selected) return;
+      let value = Number(input.value);
+      if (!Number.isFinite(value)) value = 0;
+      if (isRotation) value *= Math.PI / 180;
+      vector[axis.toLowerCase()] = value;
+      status(`${selected.userData.objectName} updated`);
+    });
+  }
 }
 
-function renderHierarchy() {
-  const list = $("hierarchy");
-  if (!list) return;
+attachVectorInput("pos", new THREE.Vector3(), false);
+attachVectorInput("rot", new THREE.Euler(), true);
+attachVectorInput("scale", new THREE.Vector3(1, 1, 1), false);
 
-  list.replaceChildren();
+function bindInspectorInputs() {
+  for (const axis of ["X", "Y", "Z"]) {
+    document.getElementById("pos" + axis).addEventListener("change", () => {
+      if (!selected) return;
+      selected.position[axis.toLowerCase()] =
+        Number(document.getElementById("pos" + axis).value) || 0;
+    });
 
-  objects.forEach(obj => {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "object-row" + (obj === selected ? " selected" : "");
+    document.getElementById("rot" + axis).addEventListener("change", () => {
+      if (!selected) return;
+      selected.rotation[axis.toLowerCase()] =
+        (Number(document.getElementById("rot" + axis).value) || 0) * Math.PI / 180;
+    });
 
-    const icon = document.createElement("span");
-    icon.className = "object-icon";
-
-    const icons = {
-      terrain: "🌿", mountains: "🏔️", tree: "🌲",
-      water: "🌊", snow: "❄️", snowmountains: "🏔️",
-      snowtree: "🌲", ice: "🧊", snowfall: "❄️",
-      wolf: "🐺", deer: "🦌", bear: "🐻", fox: "🦊",
-      rabbit: "🐇", moose: "🫎", owl: "🦉", eagle: "🦅",
-      sphere: "◉", cylinder: "▤", floor: "▱", box: "◇"
-    };
-
-    icon.textContent = icons[obj.userData.type] || "◇";
-
-    const label = document.createElement("span");
-    label.textContent = obj.name;
-
-    row.append(icon, label);
-    row.addEventListener("click", () => selectObject(obj));
-    list.appendChild(row);
-  });
-
-  const count = $("objectCount");
-  if (count) count.textContent = objects.length;
-}
-
-function selectObject(obj) {
-  selected = obj;
-  renderHierarchy();
-  updateInspector();
-}
-
-function updateInspector() {
-  const empty = $("inspectorEmpty");
-  const form = $("inspector");
-  if (!empty || !form) return;
-
-  if (!selected) {
-    empty.classList.remove("hidden");
-    form.classList.add("hidden");
-    return;
+    document.getElementById("scale" + axis).addEventListener("change", () => {
+      if (!selected) return;
+      selected.scale[axis.toLowerCase()] =
+        Math.max(0.01, Number(document.getElementById("scale" + axis).value) || 1);
+    });
   }
 
-  empty.classList.add("hidden");
-  form.classList.remove("hidden");
-
-  $("objectName").value = selected.name;
-  $("objectType").value = selected.userData.type;
-
-  ["X", "Y", "Z"].forEach((axis, i) => {
-    $("pos" + axis).value = selected.position.getComponent(i).toFixed(2);
-    $("rot" + axis).value = THREE.MathUtils.radToDeg(
-      selected.rotation.getComponent(i)
-    ).toFixed(1);
-    $("scale" + axis).value = selected.scale.getComponent(i).toFixed(2);
-  });
-
-  $("objectColor").value = "#" + getColor(selected).getHexString();
-}
-
-$("objectName")?.addEventListener("change", () => {
-  if (!selected) return;
-  selected.name = $("objectName").value.trim() || "Object";
-  renderHierarchy();
-});
-
-function bindVectorInput(id, property, axis, convert = v => v, min = -Infinity) {
-  const input = $(id);
-  if (!input) return;
-
-  input.addEventListener("change", () => {
+  document.getElementById("objectName").addEventListener("change", event => {
     if (!selected) return;
-    const value = Number(input.value);
-    if (!Number.isFinite(value)) return updateInspector();
-
-    selected[property].setComponent(axis, convert(Math.max(min, value)));
-    status("Properties updated");
-  });
-}
-
-["X", "Y", "Z"].forEach((axis, i) => {
-  bindVectorInput("pos" + axis, "position", i);
-  bindVectorInput("rot" + axis, "rotation", i, THREE.MathUtils.degToRad);
-  bindVectorInput("scale" + axis, "scale", i, v => v, 0.1);
-});
-
-$("objectColor")?.addEventListener("input", () => {
-  if (selected) setColor(selected, $("objectColor").value);
-});
-
-document.querySelectorAll("[data-add]").forEach(button => {
-  button.addEventListener("click", () => addObject(button.dataset.add));
-});
-
-function disposeObject(obj) {
-  obj.traverse(child => {
-    if (child.geometry) child.geometry.dispose();
-    if (child.material) {
-      const mats = Array.isArray(child.material) ? child.material : [child.material];
-      mats.forEach(mat => mat.dispose());
-    }
+    selected.userData.objectName = event.target.value.trim() || "Object";
+    renderHierarchy();
+    status("Object renamed");
   });
 
-  for (let i = animatedObjects.length - 1; i >= 0; i--) {
-    if (animatedObjects[i].object === obj) {
-      animatedObjects.splice(i, 1);
-    }
-  }
+  document.getElementById("objectColor").addEventListener("input", event => {
+    if (!selected) return;
+    setObjectColor(selected, event.target.value);
+  });
 }
+bindInspectorInputs();
 
-function deleteObject(obj) {
+/* ========================================
+   TRANSFORM CONTROLS
+======================================== */
+
+transformControls.addEventListener("dragging-changed", event => {
+  controls.enabled = !event.value && !playing;
+});
+
+transformControls.addEventListener("objectChange", () => {
+  if (selected) updateInspector();
+});
+
+document.querySelectorAll("[data-transform]").forEach(button => {
+  button.addEventListener("click", () => {
+    const mode = button.dataset.transform;
+    transformControls.setMode(mode);
+
+    document.querySelectorAll("[data-transform]").forEach(item => {
+      item.classList.toggle("active", item === button);
+    });
+
+    status(`${mode.charAt(0).toUpperCase() + mode.slice(1)} mode selected`);
+  });
+});
+
+/* ========================================
+   DELETE + DUPLICATE
+======================================== */
+
+function removeObject(obj) {
   if (!obj) return;
+
+  transformControls.detach();
   scene.remove(obj);
-  disposeObject(obj);
 
   const index = objects.indexOf(obj);
   if (index !== -1) objects.splice(index, 1);
 
-  if (selected === obj) selected = null;
+  const animIndex = animatedObjects.findIndex(item => item.object === obj);
+  if (animIndex !== -1) animatedObjects.splice(animIndex, 1);
+
+  if (obj === snowParticles) snowParticles = null;
+
+  obj.traverse(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (Array.isArray(child.material)) {
+        child.material.forEach(material => material.dispose());
+      } else {
+        child.material.dispose();
+      }
+    }
+  });
+
+  selected = null;
   renderHierarchy();
   updateInspector();
+  status("Object deleted");
 }
 
-$("deleteBtn")?.addEventListener("click", () => {
-  if (!selected) return status("Select an object first");
-  const name = selected.name;
-  deleteObject(selected);
-  status(name + " deleted");
+document.getElementById("deleteBtn").addEventListener("click", () => {
+  if (!selected) {
+    status("Select an object first");
+    return;
+  }
+  removeObject(selected);
 });
 
-$("duplicateBtn")?.addEventListener("click", () => {
-  if (!selected) return;
+document.getElementById("duplicateBtn").addEventListener("click", () => {
+  if (!selected) {
+    status("Select an object first");
+    return;
+  }
 
-  const source = selected;
-  const copy = addObject(source.userData.type, {
-    name: source.name + " Copy",
-    position: [source.position.x + 2, source.position.y, source.position.z + 2],
-    rotation: source.rotation.toArray().slice(0, 3),
-    scale: source.scale.toArray()
+  const copy = selected.clone(true);
+  copy.position.x += 1.5;
+  copy.userData.editorObject = true;
+  copy.userData.objectType = selected.userData.objectType;
+  copy.userData.objectName = `${selected.userData.objectName} Copy`;
+
+  copy.traverse(child => {
+    if (child.isMesh) {
+      if (child.geometry) child.geometry = child.geometry.clone();
+      if (child.material) {
+        child.material = Array.isArray(child.material)
+          ? child.material.map(m => m.clone())
+          : child.material.clone();
+      }
+    }
   });
 
-  setColor(copy, "#" + getColor(source).getHexString());
+  scene.add(copy);
+  objects.push(copy);
   selectObject(copy);
+  status("Object duplicated");
 });
 
-function projectData() {
-  return {
-    format: "FreeForge",
-    version: 3,
-    objects: objects.map(obj => ({
-      name: obj.name,
-      type: obj.userData.type,
-      color: "#" + getColor(obj).getHexString(),
-      position: obj.position.toArray(),
-      rotation: obj.rotation.toArray().slice(0, 3),
-      scale: obj.scale.toArray()
-    })),
-    camera: {
-      position: camera.position.toArray(),
-      target: controls.target.toArray()
-    }
-  };
-}
+/* ========================================
+   VIEWPORT OBJECT PICKING
+======================================== */
 
-$("saveBtn")?.addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(projectData(), null, 2)], {
-    type: "application/json"
-  });
-
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "freeforge-project.json";
-  link.click();
-
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  status("Project downloaded as JSON");
-});
-
-$("loadBtn")?.addEventListener("click", () => $("fileInput")?.click());
-
-$("fileInput")?.addEventListener("change", async event => {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  try {
-    const data = JSON.parse(await file.text());
-
-    if (data.format !== "FreeForge" || !Array.isArray(data.objects)) {
-      throw new Error("Invalid project");
-    }
-
-    [...objects].forEach(deleteObject);
-
-    data.objects.forEach(item => {
-      const type = Object.prototype.hasOwnProperty.call(names, item.type)
-        ? item.type : "box";
-
-      const obj = addObject(type, item);
-      if (item.color) setColor(obj, item.color);
-    });
-
-    if (data.camera?.position?.length === 3) {
-      camera.position.fromArray(data.camera.position);
-    }
-
-    if (data.camera?.target?.length === 3) {
-      controls.target.fromArray(data.camera.target);
-    }
-
-    controls.update();
-    selectObject(null);
-    status("Project loaded");
-  } catch (error) {
-    console.error(error);
-    alert("Valid FreeForge JSON file select karo.");
-    status("Could not load project");
-  }
-
-  event.target.value = "";
-});
-
-function setPlay(value) {
-  playing = value;
-
-  if ($("playBtn")) $("playBtn").disabled = value;
-  if ($("stopBtn")) $("stopBtn").disabled = !value;
-  $("playOverlay")?.classList.toggle("hidden", !value);
-
-  if ($("sceneStatus")) {
-    $("sceneStatus").textContent = value ? "Play Mode" : "Ready";
-  }
-
-  controls.enabled = !value;
-  grid.visible = !value;
-  axes.visible = !value;
-
-  if (value) {
-    savedCamera = {
-      position: camera.position.clone(),
-      target: controls.target.clone()
-    };
-  } else if (savedCamera) {
-    camera.position.copy(savedCamera.position);
-    controls.target.copy(savedCamera.target);
-    controls.update();
-    savedCamera = null;
-  }
-
-  status(value ? "Preview running" : "Preview stopped");
-}
-
-$("playBtn")?.addEventListener("click", () => setPlay(true));
-$("stopBtn")?.addEventListener("click", () => setPlay(false));
-$("overlayStopBtn")?.addEventListener("click", () => setPlay(false));
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
 
 renderer.domElement.addEventListener("pointerdown", event => {
-  if (playing) return;
+  if (playing || transformControls.dragging) return;
 
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -730,65 +713,190 @@ renderer.domElement.addEventListener("pointerdown", event => {
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(objects, true);
 
-  if (hits.length) {
-    const root = hits[0].object.userData.editorRoot || hits[0].object;
-    if (objects.includes(root)) selectObject(root);
+  if (!hits.length) {
+    selectObject(null);
+    return;
+  }
+
+  let target = hits[0].object;
+  while (target && !objects.includes(target)) target = target.parent;
+  selectObject(target || null);
+});
+
+/* ========================================
+   SAVE + LOAD PROJECT
+======================================== */
+
+function serializeObject(obj) {
+  const data = {
+    type: obj.userData.objectType,
+    name: obj.userData.objectName,
+    position: obj.position.toArray(),
+    rotation: [obj.rotation.x, obj.rotation.y, obj.rotation.z],
+    scale: obj.scale.toArray()
+  };
+
+  const color = getObjectColor(obj);
+  if (color) data.color = `#${color.getHexString()}`;
+  return data;
+}
+
+function saveProject() {
+  const project = {
+    app: "FreeForge Engine",
+    version: 2,
+    objects: objects
+      .filter(obj => obj !== snowParticles)
+      .map(serializeObject)
+  };
+
+  const blob = new Blob([JSON.stringify(project, null, 2)], {
+    type: "application/json"
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "freeforge-project.json";
+  link.click();
+  URL.revokeObjectURL(url);
+  status("Project downloaded");
+}
+
+function loadProjectFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const project = JSON.parse(reader.result);
+      if (!project || !Array.isArray(project.objects)) {
+        throw new Error("Invalid project file");
+      }
+
+      [...objects].forEach(obj => removeObject(obj));
+      selected = null;
+
+      for (const data of project.objects) {
+        const obj = addObject(data.type);
+        if (!obj) continue;
+
+        obj.userData.objectName = data.name || data.type;
+        if (Array.isArray(data.position)) obj.position.fromArray(data.position);
+        if (Array.isArray(data.rotation)) {
+          obj.rotation.set(data.rotation[0], data.rotation[1], data.rotation[2]);
+        }
+        if (Array.isArray(data.scale)) obj.scale.fromArray(data.scale);
+        if (data.color) setObjectColor(obj, data.color);
+      }
+
+      selectObject(null);
+      renderHierarchy();
+      status("Project loaded");
+    } catch (error) {
+      console.error(error);
+      status("Could not load project JSON");
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById("saveBtn").addEventListener("click", saveProject);
+
+document.getElementById("loadBtn").addEventListener("click", () => {
+  fileInput.click();
+});
+
+fileInput.addEventListener("change", () => {
+  if (fileInput.files && fileInput.files[0]) {
+    loadProjectFile(fileInput.files[0]);
+    fileInput.value = "";
   }
 });
 
+/* ========================================
+   PLAY / STOP PREVIEW
+======================================== */
+
+function setPlay(value) {
+  playing = value;
+
+  document.getElementById("playBtn").disabled = value;
+  document.getElementById("stopBtn").disabled = !value;
+  playOverlay.hidden = !value;
+
+  controls.enabled = !value;
+  transformControls.enabled = !value;
+  grid.visible = !value;
+  axes.visible = !value;
+
+  if (value) {
+    savedCameraPosition = camera.position.clone();
+    savedTarget = controls.target.clone();
+    transformControls.detach();
+    status("Preview running");
+  } else {
+    if (savedCameraPosition) camera.position.copy(savedCameraPosition);
+    if (savedTarget) controls.target.copy(savedTarget);
+    if (selected) transformControls.attach(selected);
+    status("Preview stopped");
+  }
+}
+
+document.getElementById("playBtn").addEventListener("click", () => setPlay(true));
+document.getElementById("stopBtn").addEventListener("click", () => setPlay(false));
+document.getElementById("overlayStopBtn").addEventListener("click", () => setPlay(false));
+
+/* ========================================
+   RESIZE + ANIMATION
+======================================== */
+
+function resizeRenderer() {
+  const width = viewport.clientWidth;
+  const height = viewport.clientHeight;
+
+  if (!width || !height) return;
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(width, height);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+}
+
+window.addEventListener("resize", resizeRenderer);
+
+const clock = new THREE.Clock();
+
 function animate() {
   requestAnimationFrame(animate);
-  const time = performance.now() * 0.001;
 
-  animatedObjects.forEach(item => {
-    if (item.type === "snowfall") {
-      const positions = item.object.geometry.attributes.position;
-
-      for (let i = 0; i < positions.count; i++) {
-        let y = positions.getY(i) - 0.035;
-        if (y < 0) y = 18;
-        positions.setY(i, y);
-        positions.setX(
-          i,
-          positions.getX(i) + Math.sin(time + i) * 0.0015
-        );
-      }
-
-      positions.needsUpdate = true;
-    } else if (item.type === "animal") {
-      item.object.position.y =
-        item.baseY + Math.sin(time * 2 + item.phase) * 0.025;
-    }
-  });
+  const delta = Math.min(clock.getDelta(), 0.05);
+  const elapsed = clock.elapsedTime;
 
   controls.update();
+
+  if (snowParticles) {
+    const positions = snowParticles.geometry.attributes.position;
+    for (let i = 0; i < positions.count; i++) {
+      let y = positions.getY(i) - delta * 2.5;
+      if (y < 0) y = 18;
+      positions.setY(i, y);
+    }
+    positions.needsUpdate = true;
+  }
+
+  for (const item of animatedObjects) {
+    if (item.object.parent) {
+      item.object.position.y =
+        item.baseY + Math.sin(elapsed * 2 + item.phase) * 0.035;
+    }
+  }
+
   renderer.render(scene, camera);
 }
 
-/* Starter world: visible white ground + snowy mountains + tree + wolf */
-addObject("snow", {
-  name: "Starter Snow Ground",
-  position: [0, -0.05, 0]
-});
+/* ========================================
+   STARTUP
+======================================== */
 
-addObject("snowmountains", {
-  name: "Snowy Mountains",
-  position: [0, 0, -8]
-});
-
-addObject("snowtree", {
-  name: "Snow Pine Tree",
-  position: [-5, 0, 0]
-});
-
-addObject("wolf", {
-  name: "Forest Wolf",
-  position: [3, 0, 1]
-});
-
-selectObject(null);
-resize();
+renderHierarchy();
+updateInspector();
+resizeRenderer();
 animate();
-
-if ($("sceneStatus")) $("sceneStatus").textContent = "Ready";
-status("Ready — snow ground, mountains, trees and wildlife available");
+status("FreeForge Engine ready");
